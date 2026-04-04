@@ -275,7 +275,7 @@ static int mlx5_mtctr_read(struct mlx5_core_dev *mdev,
 	host = MLX5_GET64(mtctr_reg, out, first_clock_timestamp);
 	*sys_counterval = (struct system_counterval_t) {
 			.cycles = host,
-			.cs_id = CSID_X86_ART,
+			.cs_id = CSID_X86_TSC,
 			.use_nsecs = true,
 	};
 	*device = MLX5_GET64(mtctr_reg, out, second_clock_timestamp);
@@ -1317,7 +1317,7 @@ static void mlx5_init_timer_clock(struct mlx5_core_dev *mdev)
 
 #ifdef CONFIG_X86
 	if (MLX5_CAP_MCAM_REG3(mdev, mtptm) &&
-	    MLX5_CAP_MCAM_REG3(mdev, mtctr) && boot_cpu_has(X86_FEATURE_ART)) {
+	    MLX5_CAP_MCAM_REG3(mdev, mtctr)) {
 		clock->ptp_info.getcrosststamp = mlx5_ptp_getcrosststamp;
 		if (expose_cycles)
 			clock->ptp_info.getcrosscycles =
