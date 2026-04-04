@@ -1344,28 +1344,14 @@ static bool convert_clock(u64 *val, u32 numerator, u32 denominator)
 static bool convert_base_to_cs(struct system_counterval_t *scv)
 {
 	struct clocksource *cs = tk_core.timekeeper.tkr_mono.clock;
-	struct clocksource_base *base;
 	u32 num, den;
 
-	/* The timestamp was taken from the time keeper clock source */
-	if (cs->id == scv->cs_id)
-		return true;
-
-	/*
-	 * Check whether cs_id matches the base clock. Prevent the compiler from
-	 * re-evaluating @base as the clocksource might change concurrently.
-	 */
-	base = READ_ONCE(cs->base);
-	if (!base || base->id != scv->cs_id)
-		return false;
-
-	num = scv->use_nsecs ? cs->freq_khz : base->numerator;
-	den = scv->use_nsecs ? USEC_PER_SEC : base->denominator;
+	num = cs->freq_khz;
+	den = USEC_PER_SEC;
 
 	if (!convert_clock(&scv->cycles, num, den))
 		return false;
 
-	scv->cycles += base->offset;
 	return true;
 }
 
