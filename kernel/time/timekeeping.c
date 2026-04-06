@@ -1344,7 +1344,19 @@ static bool convert_clock(u64 *val, u32 numerator, u32 denominator)
 static bool convert_base_to_cs(struct system_counterval_t *scv)
 {
 	struct clocksource *cs = tk_core.timekeeper.tkr_mono.clock;
+	static int print_count;
 	u32 num, den;
+
+	if (print_count < 5) {
+		u64 tsc_now = rdtsc();
+		u32 n = USEC_PER_SEC;
+		u32 d = cs->freq_khz;
+
+		if (convert_clock(&tsc_now, n, d))
+			pr_info("PTM debug %d: ptm_root_ns=%llu rdtsc_ns=%llu\n",
+				print_count, scv->cycles, tsc_now);
+		print_count++;
+	}
 
 	num = cs->freq_khz;
 	den = USEC_PER_SEC;
