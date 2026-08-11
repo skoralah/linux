@@ -247,6 +247,40 @@ static bool mlx5_is_ptm_source_time_available(struct mlx5_core_dev *dev)
 	return !!MLX5_GET(mtptm_reg, out, psta);
 }
 
+static bool mlx5_ptm_get_host_clock_info(enum clocksource_ids *cs_id,
+					 bool *use_nsecs)
+{
+#if defined(CONFIG_X86)
+	if (boot_cpu_has(X86_FEATURE_ART)) {
+		*cs_id = CSID_X86_ART;
+		*use_nsecs = true;
+		return true;
+	}
+
+	if (boot_cpu_has(X86_FEATURE_GTSC)) {
+		*cs_id = CSID_X86_GTSC;
+		*use_nsecs = false;
+		return true;
+	}
+#endif
+
+#if defined(CONFIG_ARM_ARCH_TIMER)
+	*cs_id = CSID_ARM_ARCH_COUNTER;
+	*use_nsecs = true;
+	return true;
+#endif
+
+	return false;
+}
+
+static bool mlx5_ptm_host_clock_supported(void)
+{
+	enum clocksource_ids cs_id;
+	bool use_nsecs;
+
+	return mlx5_ptm_get_host_clock_info(&cs_id, &use_nsecs);
+}
+
 static int mlx5_mtctr_read(struct mlx5_core_dev *mdev,
 			   bool real_time_mode,
 			   struct system_counterval_t *sys_counterval,
@@ -254,6 +288,8 @@ static int mlx5_mtctr_read(struct mlx5_core_dev *mdev,
 {
 	u32 out[MLX5_ST_SZ_DW(mtctr_reg)] = {0};
 	u32 in[MLX5_ST_SZ_DW(mtctr_reg)] = {0};
+	enum clocksource_ids cs_id;
+	bool use_nsecs;
 	u64 host;
 	int err;
 
@@ -272,12 +308,14 @@ static int mlx5_mtctr_read(struct mlx5_core_dev *mdev,
 	    !MLX5_GET(mtctr_reg, out, second_clock_valid))
 		return -EINVAL;
 
+	if (!mlx5_ptm_get_host_clock_info(&cs_id, &use_nsecs))
+		return -EOPNOTSUPP;
+
 	host = MLX5_GET64(mtctr_reg, out, first_clock_timestamp);
 	*sys_counterval = (struct system_counterval_t) {
 			.cycles = host,
-			.cs_id = IS_ENABLED(CONFIG_X86) ? CSID_X86_ART :
-							  CSID_ARM_ARCH_COUNTER,
-			.use_nsecs = true,
+			.cs_id = cs_id,
+			.use_nsecs = use_nsecs,
 	};
 	*device = MLX5_GET64(mtctr_reg, out, second_clock_timestamp);
 
@@ -1305,11 +1343,10 @@ static void mlx5_init_timer_max_freq_adjustment(struct mlx5_core_dev *mdev)
 static void mlx5_init_crosststamp(struct mlx5_core_dev *mdev,
 				  bool expose_cycles, struct mlx5_clock *clock)
 {
-#if defined(CONFIG_X86)
-	if (!boot_cpu_has(X86_FEATURE_ART))
-		return;
-#endif /* CONFIG_X86 */
 #if defined(CONFIG_X86) || defined(CONFIG_ARM_ARCH_TIMER)
+	if (!mlx5_ptm_host_clock_supported())
+		return;
+
 	if (!MLX5_CAP_MCAM_REG3(mdev, mtptm) ||
 	    !MLX5_CAP_MCAM_REG3(mdev, mtctr))
 		return;
