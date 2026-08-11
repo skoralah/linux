@@ -11,6 +11,7 @@ enum clocksource_ids {
 	CSID_X86_TSC,
 	CSID_X86_KVM_CLK,
 	CSID_X86_ART,
+	CSID_X86_GTSC,
 	CSID_MAX,
 };
 
