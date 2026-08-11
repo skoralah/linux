@@ -896,6 +896,18 @@ static int bnxt_phc_get_syncdevicetime(ktime_t *device,
 		CSID_X86_ART : CSID_X86_GTSC;
 	system->use_nsecs = boot_cpu_has(X86_FEATURE_ART);
 
+	/* Debugs */
+	u64 tsc_now = rdtsc();
+	u64 ptm_sys = le64_to_cpu(resp->ptm_system_ts);
+	u64 ptm_tsc = mul_u64_u32_div(ptm_sys, tsc_khz, USEC_PER_SEC);
+	static DEFINE_RATELIMIT_STATE(rs, 2 * HZ, 1);
+
+	if (__ratelimit(&rs))
+		pr_info("bnxt PTM debug: ptm_system_ts=%llu ptm_local_ts=%llu ptm_tsc(x tsc_khz)=%llu rdtsc=%llu delta=%lld cs_id=%d use_nsecs=%d\n",
+			ptm_sys, ptm_local_ts, ptm_tsc, tsc_now,
+			(s64)(tsc_now - ptm_tsc),
+			system->cs_id, system->use_nsecs);
+
 	hwrm_req_drop(bp, req);
 
 	return 0;

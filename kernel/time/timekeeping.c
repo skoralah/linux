@@ -1592,6 +1592,12 @@ int get_device_system_crosststamp(int (*get_time_fn)
 		nsec_raw = timekeeping_cycles_to_ns(&tk->tkr_raw, cycles);
 	} while (read_seqcount_retry(&tkd->seq, seq));
 
+	static DEFINE_RATELIMIT_STATE(rs, 2 * HZ, 1);
+	if (__ratelimit(&rs))
+		pr_info("xtstamp debug: syscnt_cycles=%llu cycles=%llu cycle_last=%llu now=%llu do_interp=%d cs_id=%d\n",
+			(u64)syscnt_cycles, (u64)cycles, (u64)tk->tkr_mono.cycle_last,
+			(u64)now, do_interp, xtstamp->sys_counter.cs_id);
+
 	xtstamp->sys_systime = ktime_add_ns(base_sys, nsec_sys);
 	xtstamp->sys_monoraw = ktime_add_ns(base_raw, nsec_raw);
 
