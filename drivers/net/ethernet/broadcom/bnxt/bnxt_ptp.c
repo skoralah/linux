@@ -892,8 +892,9 @@ static int bnxt_phc_get_syncdevicetime(ktime_t *device,
 	*device = ns_to_ktime(bnxt_timecounter_cyc2time(ptp, ptm_local_ts));
 	/* ptm_system_ts is 64-bit */
 	system->cycles = le64_to_cpu(resp->ptm_system_ts);
-	system->cs_id = CSID_X86_ART;
-	system->use_nsecs = true;
+	system->cs_id = boot_cpu_has(X86_FEATURE_ART) ?
+		CSID_X86_ART : CSID_X86_GTSC;
+	system->use_nsecs = boot_cpu_has(X86_FEATURE_ART);
 
 	hwrm_req_drop(bp, req);
 
@@ -1124,7 +1125,7 @@ int bnxt_ptp_init(struct bnxt *bp)
 	}
 #ifdef CONFIG_X86
 	if ((bp->fw_cap & BNXT_FW_CAP_PTP_PTM) && pcie_ptm_enabled(bp->pdev) &&
-	    boot_cpu_has(X86_FEATURE_ART))
+	    (boot_cpu_has(X86_FEATURE_ART) || boot_cpu_has(X86_FEATURE_GTSC)))
 		ptp->ptp_info.getcrosststamp = bnxt_ptp_getcrosststamp;
 #endif /* CONFIG_X86 */
 
