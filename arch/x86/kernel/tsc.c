@@ -60,6 +60,11 @@ static struct clocksource_base art_base_clk = {
 };
 static bool have_art;
 
+static struct clocksource_base gtsc_base = {
+	.id = CSID_X86_GTSC,
+};
+static bool have_gtsc;
+
 struct cyc2ns {
 	struct cyc2ns_data data[2];	/*  0 + 2*16 = 32 */
 	seqcount_latch_t   seq;		/* 32 + 4    = 36 */
@@ -1094,6 +1099,48 @@ static void __init detect_art(void)
 	setup_force_cpu_cap(X86_FEATURE_ART);
 }
 
+/*
+ * Register the AMD Golden TSC (GTSC) as a base clock for the CPU TSC.
+ *
+ * The PTM root clock and the CPU TSC are scaled from the same
+ * (SSC-modulated) reference, so tsc_khz which reflects the SSC-averaged
+ * rate mis-converts the PTM timestamp and drifts. Use the P0 core
+ * frequency as the ratio instead (MSRC001_0064 PStateDef,
+ * CoreCOF = CpuFid[11:0] * 5 MHz). The shared reference cancels in the
+ * ratio, so neither its frequency nor the PTM scale factor appears here.
+ *
+ * offset = 0: firmware aligns the leaf TSC to the GTSC at boot.
+ * Persistence across suspend/resume and CPU hotplug is not yet confirmed.
+ */
+static void __init detect_gtsc(void)
+{
+	u32 fid, p0_freq_khz;
+	u64 msr_val;
+
+	if (boot_cpu_data.x86_vendor != X86_VENDOR_AMD)
+		return;
+
+	if (boot_cpu_has(X86_FEATURE_HYPERVISOR) ||
+	    !boot_cpu_has(X86_FEATURE_NONSTOP_TSC) ||
+	    tsc_async_resets)
+		return;
+
+	/* CpuFid in bits [11:0], P0 = FID * 5 MHz */
+	if (rdmsrq_safe(MSR_AMD_PSTATE_DEF_BASE, &msr_val))
+		return;
+
+	fid = msr_val & GENMASK(11,0); /* CpuFid[11:0] */
+	if (fid < 0x010) /* 0x00F-0x000 are reserved per PStateDef */
+		return;
+
+	p0_freq_khz = fid * 5 * 1000;
+	gtsc_base.numerator = p0_freq_khz;
+	gtsc_base.denominator = USEC_PER_SEC;
+	gtsc_base.offset = 0;
+
+	setup_force_cpu_cap(X86_FEATURE_GTSC);
+	pr_info("tsc: AMD GTSC PTM root clock, P0 %u kHz\n", p0_freq_khz);
+}
 
 /* clocksource code */
 
@@ -1385,6 +1432,9 @@ out:
 	if (boot_cpu_has(X86_FEATURE_ART)) {
 		have_art = true;
 		clocksource_tsc.base = &art_base_clk;
+	} else if (boot_cpu_has(X86_FEATURE_GTSC)) {
+		have_gtsc = true;
+		clocksource_tsc.base = &gtsc_base;
 	}
 
 	/*
@@ -1422,6 +1472,9 @@ static int __init init_tsc_clocksource(void)
 		if (boot_cpu_has(X86_FEATURE_ART)) {
 			have_art = true;
 			clocksource_tsc.base = &art_base_clk;
+		} else if (boot_cpu_has(X86_FEATURE_GTSC)) {
+			have_gtsc = true;
+			clocksource_tsc.base = &gtsc_base;
 		}
 		clocksource_register_khz(&clocksource_tsc, tsc_khz);
 		clocksource_unregister(&clocksource_tsc_early);
@@ -1558,6 +1611,7 @@ void __init tsc_init(void)
 
 	clocksource_register_khz(&clocksource_tsc_early, tsc_khz);
 	detect_art();
+	detect_gtsc();
 }
 
 #ifdef CONFIG_SMP
